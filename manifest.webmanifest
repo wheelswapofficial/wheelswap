@@ -1,0 +1,26 @@
+{
+  "id": "/",
+  "name": "WheelSwap \u2014 Buy, Sell & Trade",
+  "short_name": "WheelSwap",
+  "description": "Buy, sell, and trade wheels and tires. Manage your listings in My Garage.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0b0d10",
+  "theme_color": "#101216",
+  "lang": "en-US",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
