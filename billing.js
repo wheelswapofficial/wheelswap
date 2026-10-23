@@ -41,3 +41,36 @@ async function handleCheckoutReturn() {
  }
 }
 if(cloud){cloud.auth.onAuthStateChange(()=>setTimeout(handleCheckoutReturn,0));handleCheckoutReturn();}
+
+async function openMembership() {
+ if(!currentUser){openAccount();return;}
+ let box=document.getElementById('membershipPanel');
+ if(!box){document.querySelector('main').insertAdjacentHTML('afterbegin','<section id="membershipPanel" class="note" aria-live="polite"></section>');box=document.getElementById('membershipPanel');}
+ box.textContent='Loading posting plan…';
+ try {
+  const result=await billingRequest('/api/subscription',{action:'status'}),sub=result.subscription;
+  box.innerHTML='<h3>Your posting plan</h3><p>First 30 days free from your first publish attempt. Then choose $5 per new listing or $25/month for unlimited new listings. The monthly plan renews until canceled. Existing listings stay posted after cancellation.</p>';
+  if(sub&&['active','past_due','unpaid','incomplete','paused'].includes(sub.status)) {
+   const note=document.createElement('p');note.textContent=sub.active?'Unlimited posting '+(sub.cancel_at_period_end?'ends ':'renews ')+new Date(sub.period_end).toLocaleDateString()+'.':'Monthly plan: '+sub.status+'. New posts use the $5 option until payment is resolved.';box.append(note);
+   if(!sub.cancel_at_period_end&&['active','past_due','unpaid'].includes(sub.status)) {const btn=document.createElement('button');btn.className='btn ghost';btn.textContent='Cancel monthly renewal';btn.onclick=cancelMembership;box.append(btn);}
+  } else {const btn=document.createElement('button');btn.className='btn';btn.textContent='Choose unlimited — $25/month';btn.onclick=startMembership;box.append(btn);}
+ }catch(e){box.textContent=e.message;}
+}
+async function startMembership() {
+ if(!window.confirm('Subscribe to unlimited posting for $25 USD per month? Billing starts after checkout and renews monthly until you cancel in My Garage. Your free posting trial does not delay subscription billing.'))return;
+ try {const r=await billingRequest('/api/subscription',{action:'checkout'});if(r.url&&new URL(r.url).hostname==='checkout.stripe.com'){location.assign(r.url);return;}if(r.already_subscribed){toast('You already have a monthly plan.');await openMembership();return;}toast('Your subscription payment is processing.');}catch(e){toast(e.message);}
+}
+async function cancelMembership() {
+ if(!window.confirm('Stop the $25 monthly renewal? Unlimited posting continues through the paid period. Existing listings stay posted.'))return;
+ try {await billingRequest('/api/subscription',{action:'cancel'});toast('Monthly renewal canceled.');await openMembership();}catch(e){toast(e.message);}
+}
+if(typeof openGarage==='function') {
+ const garageWithListings=openGarage;
+ openGarage=async function(){await garageWithListings();if(currentUser)await openMembership();};
+}
+async function membershipReturn(){
+ const state=new URLSearchParams(location.search).get('membership');if(!state||!currentUser)return;
+ history.replaceState(null,'',location.pathname+location.hash);
+ toast(state==='cancel'?'Subscription checkout canceled.':'Checking your monthly subscription…');await openGarage();
+}
+if(cloud){cloud.auth.onAuthStateChange(()=>setTimeout(membershipReturn,0));membershipReturn();}
