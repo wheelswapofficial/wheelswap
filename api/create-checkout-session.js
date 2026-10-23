@@ -1,9 +1,12 @@
 const b=require('../server/billing');
+const membership=require('../server/subscriptions');
 module.exports=async function handler(req,res) {
   if(!b.method(req,res,'POST')) return;
   try {
     const c=b.config(), user=await b.seller(c,req);
     if(!b.UUID.test(req.body?.listing_id||'')) throw b.httpError(400,'Choose a valid listing.');
+    const account=await membership.account(c,user);
+    if(account.customer_id)await membership.current(c,b.stripe(c),user,account);
     let order=await b.rpc(c,'billing_prepare_listing',{p_seller_id:user.id,p_listing_id:req.body.listing_id});
     if(order.published) return res.json(order);
     const client=b.stripe(c),price=await client.prices.retrieve(c.STRIPE_LISTING_PRICE_ID);
