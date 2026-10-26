@@ -4,6 +4,40 @@ let currentUser=null, garageOnly=false, authMode='login', recoveryReady=false, g
 const GARAGE_LABELS={active:'Available',pending:'Pending',multiple_sets:'Multiple Sets',sold:'Sold',hidden:'Draft'};
 function garageStatus(l){return l.status==='active'?(['pending','multiple_sets'].includes(l.availability)?l.availability:'active'):l.status;}
 function setGarageFilter(value){garageFilter=value;render();}
+
+/* Seller analytics: only detail opens count, once per browser session. */
+let listingViewCounts=null, listingViewSession=null;
+const recordedListingViews=new Set();
+function getListingViewSession(){
+ if(listingViewSession)return listingViewSession;
+ try{listingViewSession=sessionStorage.getItem('wheelswap_view_session_v1');}catch{}
+ if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(listingViewSession||'')){
+  listingViewSession=crypto.randomUUID();
+  try{sessionStorage.setItem('wheelswap_view_session_v1',listingViewSession);}catch{}
+ }
+ return listingViewSession;
+}
+async function recordListingView(l){
+ if(!cloud||!l?.seller_id||l.status!=='active'||l.seller_id===currentUser?.id||recordedListingViews.has(l.id))return;
+ recordedListingViews.add(l.id);
+ try{
+  const session=await cloud.auth.getSession();
+  if(session.error)throw session.error;
+  if(session.data.session?.user?.id===l.seller_id)return;
+  const result=await cloud.from('listing_views').insert({listing_id:l.id,viewer_session:getListingViewSession()});
+  if(result.error&&result.error.code!=='23505')throw result.error;
+ }catch{recordedListingViews.delete(l.id);}
+}
+async function loadGarageViewCounts(){
+ listingViewCounts=null;
+ if(!garageOnly||!currentUser)return;
+ const userId=currentUser.id;
+ try{
+  const rows=checked(await cloud.rpc('get_my_listing_view_counts'));
+  if(currentUser?.id===userId)listingViewCounts=new Map((rows||[]).map(row=>[String(row.listing_id),Number(row.views)]));
+ }catch{/* Keep listings usable when analytics is temporarily unavailable. */}
+}
+
 const localListings=JSON.parse(localStorage.getItem(KEY)||'[]');
 const redirectURL=()=>location.origin+'/';
 const checked=result=>{if(result.error)throw result.error;return result.data};
@@ -30,7 +64,7 @@ render=function(){
    const card=[...document.querySelectorAll('.listing')].find(el=>el.dataset.listingId===String(l.id));if(!card)continue;
    const state=garageStatus(l);card.querySelector('.pill').textContent=GARAGE_LABELS[state]||'Draft';card.querySelector('.pill').dataset.availability=state;
    const controls=document.createElement('div');controls.className='garage-manage';
-   controls.innerHTML=`<label for="status-${esc(l.id)}">LISTING STATUS</label><select id="status-${esc(l.id)}" aria-label="Status for ${esc(l.title)}">${Object.entries(GARAGE_LABELS).filter(([key])=>key!=='hidden'||state==='hidden').map(([key,label])=>`<option value="${key}" ${state===key?'selected':''}>${label}</option>`).join('')}</select><div class="garage-actions"><button class="btn" data-garage-save>Save status</button><button class="btn ghost" data-garage-contact>Contact details</button></div><p class="note" role="status" data-garage-feedback>${state==='hidden'?'Drafts are private. Choose Available to publish.':state==='sold'?'Sold — saved here for your records.':state==='pending'?'Buyers see Pending while the deal is in progress.':state==='multiple_sets'?'Buyers see that you have multiple sets available.':'Visible to buyers and ready for inquiries.'}</p>`;
+   controls.innerHTML=`<p class="garage-view-count">${listingViewCounts?`${(listingViewCounts.get(String(l.id))||0).toLocaleString()} views`:'Views temporarily unavailable'}</p><p class="note">Listing opens since tracking began. Your own views are excluded.</p><label for="status-${esc(l.id)}">LISTING STATUS</label><select id="status-${esc(l.id)}" aria-label="Status for ${esc(l.title)}">${Object.entries(GARAGE_LABELS).filter(([key])=>key!=='hidden'||state==='hidden').map(([key,label])=>`<option value="${key}" ${state===key?'selected':''}>${label}</option>`).join('')}</select><div class="garage-actions"><button class="btn" data-garage-save>Save status</button><button class="btn ghost" data-garage-contact>Contact details</button></div><p class="note" role="status" data-garage-feedback>${state==='hidden'?'Drafts are private. Choose Available to publish.':state==='sold'?'Sold — saved here for your records.':state==='pending'?'Buyers see Pending while the deal is in progress.':state==='multiple_sets'?'Buyers see that you have multiple sets available.':'Visible to buyers and ready for inquiries.'}</p>`;
    controls.addEventListener('click',e=>{if(e.target.closest('[data-garage-save]'))changeStatus(l.id,controls.querySelector('select').value);if(e.target.closest('[data-garage-contact]'))editContact(l.id)});
    if(state==='sold'){const relist=document.createElement('button');relist.className='btn';relist.textContent='Relist →';relist.style.width='100%';relist.addEventListener('click',()=>changeStatus(l.id,'active'));controls.append(relist)}
    card.querySelector('.content').append(controls);
@@ -43,7 +77,7 @@ render=function(){
 };
 const originalReset=resetFilters;resetFilters=function(){garageOnly=false;originalReset();loadListings()};
 const originalSaved=showSaved;showSaved=function(){garageOnly=false;originalSaved();loadListings()};
-async function loadListings(){if(!cloud){toast('Account service could not load. Refresh to retry.');return}try{let query=cloud.from('listings').select('*,listing_photos(storage_path,sort_order)').order('created_at',{ascending:false});if(garageOnly)query=query.eq('seller_id',currentUser.id);else query=query.eq('status','active');const rows=checked(await query);listings=rows.map(l=>({...l,size:String(l.wheel_diameter||''),width:l.wheel_width||'',bolt:l.bolt_pattern,location:[l.city,l.state].filter(Boolean).join(', '),zip:l.zip_code,trade:l.trades_accepted,delivery:l.shipping_available?(l.pickup_available?'both':'shipping'):'pickup',photo:l.listing_photos?.length?cloud.storage.from('listing-images').getPublicUrl([...l.listing_photos].sort((a,b)=>a.sort_order-b.sort_order)[0].storage_path).data.publicUrl:'',seller:l.seller_name||'WheelSwap seller',email:l.contact_email||''}));if(!garageOnly)listings.push(...localListings.filter(l=>!listings.some(c=>c.id===l.id)));render()}catch(e){toast('Could not load cloud listings. Your device listings are preserved.')}}
+async function loadListings(){if(!cloud){toast('Account service could not load. Refresh to retry.');return}try{let query=cloud.from('listings').select('*,listing_photos(storage_path,sort_order)').order('created_at',{ascending:false});if(garageOnly)query=query.eq('seller_id',currentUser.id);else query=query.eq('status','active');const rows=checked(await query);await loadGarageViewCounts();listings=rows.map(l=>({...l,size:String(l.wheel_diameter||''),width:l.wheel_width||'',bolt:l.bolt_pattern,location:[l.city,l.state].filter(Boolean).join(', '),zip:l.zip_code,trade:l.trades_accepted,delivery:l.shipping_available?(l.pickup_available?'both':'shipping'):'pickup',photo:l.listing_photos?.length?cloud.storage.from('listing-images').getPublicUrl([...l.listing_photos].sort((a,b)=>a.sort_order-b.sort_order)[0].storage_path).data.publicUrl:'',seller:l.seller_name||'WheelSwap seller',email:l.contact_email||''}));if(!garageOnly)listings.push(...localListings.filter(l=>!listings.some(c=>c.id===l.id)));render()}catch(e){toast('Could not load cloud listings. Your device listings are preserved.')}}
 async function changeStatus(id,status){
  if(!currentUser){openAccount();return}
  if(!Object.hasOwn(GARAGE_LABELS,status)){toast('Choose a valid status.');return}
@@ -63,7 +97,7 @@ async function changeStatus(id,status){
  }catch(e){if(feedback)feedback.textContent='Could not save: '+e.message;toast(e.message)}
  finally{if(controls){delete controls.dataset.saving;controls.querySelectorAll('button,select').forEach(el=>el.disabled=false)}}
 }
-const originalView=viewListing;viewListing=function(id){originalView(id);const l=listings.find(x=>String(x.id)===String(id));if(l&&['pending','multiple_sets','sold'].includes(garageStatus(l))){const note=document.createElement('p');note.className='availability-detail';note.dataset.availability=garageStatus(l);note.textContent=GARAGE_LABELS[garageStatus(l)];$('detailBody').prepend(note);}if(l?.seller_id&&l.email){const href='mailto:'+encodeURIComponent(l.email)+'?subject='+encodeURIComponent('WheelSwap inquiry: '+l.title)+'&body='+encodeURIComponent('Hi, is your '+l.title+' still available?');$('contactSeller').outerHTML=`<p class="note">Contact email: <span>${esc(l.email)}</span></p><a id="contactSeller" class="btn" style="display:block;text-align:center;text-decoration:none" href="${esc(href)}">Contact Seller by Email →</a>`;}if(l?.seller_id&&!l.email){$('contactSeller').disabled=true;$('contactSeller').textContent='Seller has not added a contact email yet.';}if(l?.seller_id===currentUser?.id)$('detailBody').insertAdjacentHTML('beforeend',`<button class="btn ghost" style="width:100%;margin-top:10px" onclick="editContact('${l.id}')">Edit contact details</button>`);};
+const originalView=viewListing;viewListing=function(id){originalView(id);const l=listings.find(x=>String(x.id)===String(id));if(l)void recordListingView(l);if(l&&['pending','multiple_sets','sold'].includes(garageStatus(l))){const note=document.createElement('p');note.className='availability-detail';note.dataset.availability=garageStatus(l);note.textContent=GARAGE_LABELS[garageStatus(l)];$('detailBody').prepend(note);}if(l?.seller_id&&l.email){const href='mailto:'+encodeURIComponent(l.email)+'?subject='+encodeURIComponent('WheelSwap inquiry: '+l.title)+'&body='+encodeURIComponent('Hi, is your '+l.title+' still available?');$('contactSeller').outerHTML=`<p class="note">Contact email: <span>${esc(l.email)}</span></p><a id="contactSeller" class="btn" style="display:block;text-align:center;text-decoration:none" href="${esc(href)}">Contact Seller by Email →</a>`;}if(l?.seller_id&&!l.email){$('contactSeller').disabled=true;$('contactSeller').textContent='Seller has not added a contact email yet.';}if(l?.seller_id===currentUser?.id)$('detailBody').insertAdjacentHTML('beforeend',`<button class="btn ghost" style="width:100%;margin-top:10px" onclick="editContact('${l.id}')">Edit contact details</button>`);};
 let contactListingId=null,contactImportId=null;
 document.body.insertAdjacentHTML('beforeend',`<div class="modal" id="contactModal"><div class="panel"><div class="panelhead"><h2>Seller contact details</h2><button class="x" onclick="closeModal('contactModal')" aria-label="Close contact details">×</button></div><form id="contactForm"><label for="contactName">PUBLIC SELLER NAME</label><input id="contactName" required maxlength="120"><label for="contactEmail">PUBLIC CONTACT EMAIL</label><input id="contactEmail" required type="email" maxlength="254"><p class="note">Buyers will see this name and email on your listing. Use a contact email you are comfortable sharing publicly. This does not change your account login email.</p><label style="display:flex;gap:8px;align-items:center"><input id="contactConsent" type="checkbox" required style="width:auto"> I agree to share these contact details publicly.</label><p id="contactStatus" class="note" role="status"></p><button class="btn" id="saveContact">Save contact details</button></form></div></div>`);
 function editContact(id,importing=false){if(!currentUser){openAccount();return}const l=(importing?localListings:listings).find(x=>x.id===id);if(!l||(!importing&&l.seller_id!==currentUser.id))return;contactListingId=importing?null:id;contactImportId=importing?id:null;$('contactName').value=l.seller||'';$('contactEmail').value=l.email||'';$('contactConsent').checked=false;$('contactStatus').textContent='';$('saveContact').textContent=importing?'Publish listing':'Save contact details';$('contactModal').classList.add('open');}
@@ -85,7 +119,7 @@ const garageStyle=document.createElement('style');garageStyle.textContent=`
 .garage-tools{margin:0 0 24px;padding:24px;border:1px solid #ffffff20;border-radius:14px;background:linear-gradient(120deg,#222833,#12161c)}
 .garage-intro{display:flex;gap:20px;align-items:center;justify-content:space-between}.garage-intro h3{font-size:23px;letter-spacing:-.6px;margin:0 0 8px}.garage-intro p{margin:0;color:#afb8c5;font-size:13px;line-height:1.5}.garage-intro>.btn{white-space:nowrap}
 .garage-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-top:22px}.garage-tab{border:1px solid #ffffff20;background:#10141b;color:#d4dae3;padding:10px 13px;border-radius:8px;font-weight:700;font-size:12px}.garage-tab span{margin-left:6px;opacity:.65}.garage-tab.selected{border-color:#ff7936;color:#ffad81;background:#ff681e16}
-.garage-manage{border-top:1px solid #ffffff18;padding-top:16px;margin-top:16px;cursor:default}.garage-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.garage-actions .btn{font-size:12px;padding:11px 8px}.garage-manage .note{margin-bottom:0;min-height:36px}.garage-manage button:disabled,.garage-manage select:disabled{opacity:.55;cursor:wait}
+.garage-view-count{font-size:20px;font-weight:800;color:#ffad81;margin:0 0 6px}.garage-manage{border-top:1px solid #ffffff18;padding-top:16px;margin-top:16px;cursor:default}.garage-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.garage-actions .btn{font-size:12px;padding:11px 8px}.garage-manage .note{margin-bottom:0;min-height:36px}.garage-manage button:disabled,.garage-manage select:disabled{opacity:.55;cursor:wait}
 .pill[data-availability=active]{color:#a2e8bb}.pill[data-availability=pending],.availability-detail[data-availability=pending]{color:#ffd176}.pill[data-availability=multiple_sets],.availability-detail[data-availability=multiple_sets]{color:#9dc9ff}.pill[data-availability=sold]{color:#c3c8d0}.availability-detail{font-size:13px;font-weight:800;border:1px solid #ffffff20;display:inline-block;border-radius:7px;padding:8px 12px}
 @media(max-width:600px){.garage-tools{padding:18px}.garage-intro{align-items:stretch;flex-direction:column;gap:16px}.garage-tab{padding:10px;font-size:11px}.garage-tabs{gap:6px}}
 `;document.head.append(garageStyle);
