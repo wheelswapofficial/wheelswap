@@ -105,12 +105,14 @@ $('contactForm').addEventListener('submit',async e=>{e.preventDefault();const b=
 $('accountForm').addEventListener('submit',async e=>{e.preventDefault();if(!cloud){$('accountStatus').textContent='Account service unavailable. Refresh to retry.';return}const button=$('accountSubmit');button.disabled=true;try{const email=$('accountEmail').value.trim(),password=$('accountPassword').value;let message='';if(authMode==='signup'){checked(await cloud.auth.signUp({email,password,options:{emailRedirectTo:redirectURL()}}));message='Check your email for a verification link before logging in.'}else if(authMode==='login'){checked(await cloud.auth.signInWithPassword({email,password}));closeModal('accountModal');message='Logged in.'}else if(authMode==='forgot'){checked(await cloud.auth.resetPasswordForEmail(email,{redirectTo:redirectURL()}));message='If that account exists, a password reset email is on its way.'}else if(authMode==='resend'){checked(await cloud.auth.resend({type:'signup',email,options:{emailRedirectTo:redirectURL()}}));message='Check your email for a verification link.'}else if(authMode==='reset'){if(!recoveryReady)throw Error('Open a valid password reset link first.');checked(await cloud.auth.updateUser({password}));recoveryReady=false;message='Password updated.';closeModal('accountModal');toast(message)}$('accountStatus').textContent=message;$('accountPassword').value=''}catch(e){$('accountStatus').textContent=e.message}finally{button.disabled=false}});
 async function logout(){try{checked(await cloud.auth.signOut());garageOnly=false;currentUser=null;closeModal('accountModal');await loadListings()}catch(e){toast(e.message)}}
 async function publish(values,file,existingId){if(!currentUser?.email_confirmed_at)throw Error('Sign in with a verified email first.');if(!values.public_contact)throw Error('Agree to share a seller name and contact email before publishing.');if(!values.email?.trim()||!values.seller?.trim())throw Error('Enter a seller name and contact email.');const id=existingId||crypto.randomUUID();const row={id,seller_id:currentUser.id,seller_name:values.seller.trim(),contact_email:values.email.trim(),title:values.title,price:Number(values.price),wheel_diameter:Number(values.size),wheel_width:Number(values.width)||null,bolt_pattern:values.bolt,brand:values.brand||null,city:values.city,state:values.state,zip_code:values.zip,description:values.description||'',condition:({'Like New':'like_new','Used - Fair':'fair','Used - Good':'good'})[values.condition]||'good',category:'wheels',pickup_available:values.delivery!=='shipping',shipping_available:values.delivery!=='pickup',trades_accepted:!!values.trade,status:'hidden'};
-if(file&&(!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>6*1024*1024))throw Error('Use a JPG, PNG, or WebP photo under 6 MB.');
+const files=Array.isArray(file)?file:(file?[file]:[]);
+if(files.length>10)throw Error('Choose up to 10 photos.');
+for(const photo of files)if(!['image/jpeg','image/png','image/webp'].includes(photo.type)||photo.size>6*1024*1024)throw Error('Use JPG, PNG, or WebP photos under 6 MB each.');
 checked(await cloud.from('profiles').upsert({id:currentUser.id,display_name:values.seller||'WheelSwap seller'},{onConflict:'id'}));
 checked(await cloud.from('listings').insert(row));
-try{if(file){const path=`${currentUser.id}/${id}/${crypto.randomUUID()}.${file.type.split('/')[1]}`;checked(await cloud.storage.from('listing-images').upload(path,file,{contentType:file.type}));checked(await cloud.from('listing_photos').insert({listing_id:id,storage_path:path,sort_order:0}));}await publishListingAccess(id)}catch(e){throw Object.assign(Error('Your listing is saved as hidden in My Garage. '+e.message),{draftSavedId:id})}return id;}
+try{for(const [sortOrder,file] of files.entries()){const path=`${currentUser.id}/${id}/${crypto.randomUUID()}.${file.type.split('/')[1]}`;checked(await cloud.storage.from('listing-images').upload(path,file,{contentType:file.type}));checked(await cloud.from('listing_photos').insert({listing_id:id,storage_path:path,sort_order:sortOrder}));}await publishListingAccess(id)}catch(e){throw Object.assign(Error('Your listing is saved as hidden in My Garage. '+e.message),{draftSavedId:id})}return id;}
 $('sellForm').insertAdjacentHTML('beforeend','<p class="note" id="publishStatus" role="status"></p>');
-$('sellForm').addEventListener('submit',async e=>{e.preventDefault();$('publishStatus').textContent='';const b=e.target.querySelector('[type=submit]');b.disabled=true;try{const values=Object.fromEntries(new FormData(e.target));values.trade=new FormData(e.target).has('trade');await publish(values,$('photoInput').files[0]);e.target.reset();$('preview').style.display='none';closeModal('sellModal');garageOnly=false;await loadListings();toast('Listing published!')}catch(e){if(e.draftSavedId){document.getElementById('sellForm').reset();$('preview').style.display='none';closeModal('sellModal');await openGarage()}$('publishStatus').textContent=e.message;toast(e.message)}finally{b.disabled=false}});
+$('sellForm').addEventListener('submit',async e=>{e.preventDefault();$('publishStatus').textContent='';const b=e.target.querySelector('[type=submit]');b.disabled=true;try{const values=Object.fromEntries(new FormData(e.target));values.trade=new FormData(e.target).has('trade');await publish(values,selectedListingPhotos);e.target.reset();$('preview').style.display='none';clearListingPhotos();closeModal('sellModal');garageOnly=false;await loadListings();toast('Listing published!')}catch(e){if(e.draftSavedId){document.getElementById('sellForm').reset();$('preview').style.display='none';clearListingPhotos();closeModal('sellModal');await openGarage()}$('publishStatus').textContent=e.message;toast(e.message)}finally{b.disabled=false}});
 function importLocal(id){editContact(id,true)}
 if(cloud){cloud.auth.onAuthStateChange((event,session)=>{currentUser=session?.user||null;if(!currentUser){garageOnly=false;recoveryReady=false;}$('accountButton').textContent=currentUser?'Account':'Log in / Sign up';$('signOutButton').hidden=!currentUser;if(event==='PASSWORD_RECOVERY'){recoveryReady=true;setAuthMode('reset');$('accountModal').classList.add('open')}setTimeout(()=>loadListings(),0)});cloud.auth.getSession().then(({data,error})=>{if(error){toast(error.message);return}currentUser=data.session?.user||null;loadListings()});const params=new URLSearchParams(location.hash.slice(1));if(params.has('error_description')){openAccount();$('accountStatus').textContent=params.get('error_description');history.replaceState(null,'',location.pathname)}}else toast('Account service unavailable. Refresh to retry.');
 
@@ -123,3 +125,65 @@ const garageStyle=document.createElement('style');garageStyle.textContent=`
 .pill[data-availability=active]{color:#a2e8bb}.pill[data-availability=pending],.availability-detail[data-availability=pending]{color:#ffd176}.pill[data-availability=multiple_sets],.availability-detail[data-availability=multiple_sets]{color:#9dc9ff}.pill[data-availability=sold]{color:#c3c8d0}.availability-detail{font-size:13px;font-weight:800;border:1px solid #ffffff20;display:inline-block;border-radius:7px;padding:8px 12px}
 @media(max-width:600px){.garage-tools{padding:18px}.garage-intro{align-items:stretch;flex-direction:column;gap:16px}.garage-tab{padding:10px;font-size:11px}.garage-tabs{gap:6px}}
 `;document.head.append(garageStyle);
+
+/* Keep selections when adding another batch, including on mobile. */
+let selectedListingPhotos=[];
+const photoPicker=$('photoInput');
+photoPicker.multiple=true;
+photoPicker.accept='image/jpeg,image/png,image/webp';
+photoPicker.previousElementSibling.textContent='PHOTOS (UP TO 10)';
+const photoHelp=document.createElement('p');
+photoHelp.className='note';
+photoHelp.textContent='Select multiple pictures, or choose more to add to your selection. First picture is the cover. JPG, PNG, or WebP; 6 MB each.';
+const photoPreviews=document.createElement('div');
+photoPreviews.style.cssText='display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px';
+photoPreviews.setAttribute('aria-label','Selected listing photos');
+photoPicker.after(photoHelp,photoPreviews);
+let photoPreviewURLs=[];
+function renderListingPhotos(){
+ photoPreviewURLs.forEach(url=>URL.revokeObjectURL(url));photoPreviewURLs=[];
+ photoPreviews.replaceChildren();
+ selectedListingPhotos.forEach((file,index)=>{
+  const item=document.createElement('div'),img=document.createElement('img'),remove=document.createElement('button');
+  const url=URL.createObjectURL(file);photoPreviewURLs.push(url);
+  img.src=url;img.alt='Selected photo '+(index+1);
+  img.style.cssText='width:100%;height:90px;object-fit:cover;border-radius:8px';
+  remove.type='button';remove.className='btn ghost';remove.style.cssText='width:100%;font-size:11px;padding:8px';
+  remove.textContent=index===0?'Remove cover':'Remove photo '+(index+1);
+  remove.onclick=()=>{selectedListingPhotos.splice(index,1);renderListingPhotos()};
+  item.append(img,remove);photoPreviews.append(item);
+ });
+ photoHelp.textContent=selectedListingPhotos.length+'/10 photos selected. First picture is the cover. Add more photos anytime before publishing. JPG, PNG, or WebP; 6 MB each.';
+ $('preview').style.display='none';
+}
+function clearListingPhotos(){selectedListingPhotos=[];photoPicker.value='';renderListingPhotos()}
+photoPicker.addEventListener('change',()=>{
+ const incoming=Array.from(photoPicker.files||[]);
+ if(incoming.some(f=>!['image/jpeg','image/png','image/webp'].includes(f.type)||f.size>6*1024*1024)){toast('Choose JPG, PNG, or WebP photos under 6 MB each.');photoPicker.value='';$('preview').style.display='none';return}
+ const added=incoming.filter(f=>!selectedListingPhotos.some(p=>p.name===f.name&&p.size===f.size&&p.lastModified===f.lastModified));
+ if(selectedListingPhotos.length+added.length>10){toast('You can add up to 10 photos.');photoPicker.value='';$('preview').style.display='none';return}
+ selectedListingPhotos.push(...added);photoPicker.value='';renderListingPhotos();
+});
+const singlePhotoView=viewListing;
+viewListing=function(id){
+ singlePhotoView(id);
+ const l=listings.find(x=>String(x.id)===String(id));
+ if(!l?.listing_photos?.length)return;
+ const photos=[...l.listing_photos].sort((a,b)=>a.sort_order-b.sort_order);
+ const cover=$('detailBody').querySelector('img');if(!cover)return;
+ cover.alt='Listing photo 1 of '+photos.length;
+ if(photos.length<2)return;
+ const gallery=document.createElement('div');
+ gallery.style.cssText='display:flex;gap:8px;overflow-x:auto;padding:10px 0';
+ gallery.setAttribute('aria-label','Listing photo gallery');
+ photos.forEach((photo,index)=>{
+  const button=document.createElement('button'),img=document.createElement('img');
+  button.type='button';button.className='btn ghost';button.style.cssText='flex:0 0 72px;padding:3px';
+  button.setAttribute('aria-label','Show photo '+(index+1)+' of '+photos.length);
+  img.src=cloud.storage.from('listing-images').getPublicUrl(photo.storage_path).data.publicUrl;
+  img.alt='Photo '+(index+1);img.style.cssText='width:64px;height:64px;object-fit:cover;border-radius:5px';
+  button.onclick=()=>{cover.src=img.src;cover.alt='Listing photo '+(index+1)+' of '+photos.length};
+  button.append(img);gallery.append(button);
+ });
+ cover.after(gallery);
+};
