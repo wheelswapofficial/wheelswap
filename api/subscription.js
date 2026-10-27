@@ -38,7 +38,7 @@ module.exports=async function(req,res) {
    ...(plan==='annual'?{shipping_address_collection:{allowed_countries:['US']},customer_update:{shipping:'auto'}}:{}),
    success_url:c.APP_URL+'/?membership=success',cancel_url:c.APP_URL+'/?membership=cancel',
    integration_identifier:'wheelswap_'+plan+'_qmxrptza',
-   custom_text:{submit:{message:plan==='annual'?'$260 USD per year for unlimited new listings, plus one surprise box after your initial payment. US shipping included. Renews annually until canceled in My Garage. Box contents vary.':'$25 USD per month for unlimited new listings. Renews monthly until canceled. Cancel in My Garage. Existing listings remain posted after cancellation.'}},
+   custom_text:{submit:{message:plan==='annual'?'$260 USD per year for unlimited new listings, plus one surprise box with a shirt and little goodies after your initial payment. US shipping included. Renews annually until canceled in My Garage. Goodies vary.':'$25 USD per month for unlimited new listings. Renews monthly until canceled. Cancel in My Garage. Existing listings remain posted after cancellation.'}},
   },{idempotencyKey:'wheelswap-subscription-'+a.checkout_token});
   await b.rpc(c,'billing_subscription_account',{p_seller_id:user.id,p_session_id:session.id});
   return res.json({url:session.url});
