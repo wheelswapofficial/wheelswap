@@ -41,3 +41,35 @@ async function handleCheckoutReturn() {
  }
 }
 if(cloud){cloud.auth.onAuthStateChange(()=>setTimeout(handleCheckoutReturn,0));handleCheckoutReturn();}
+async function openMembership() {
+ if(!currentUser){openAccount();return;}
+ let box=document.getElementById('membershipPanel');
+ if(!box){document.querySelector('main').insertAdjacentHTML('afterbegin','<section id="membershipPanel" class="note" aria-live="polite"></section>');box=document.getElementById('membershipPanel');}
+ box.textContent='Loading posting plan…';box.scrollIntoView({behavior:'smooth',block:'center'});
+ try {
+  const result=await billingRequest('/api/subscription',{action:'status'}),sub=result.subscription;
+  box.innerHTML='<h3>Your posting plan</h3><p>First 30 days free from your first publish attempt. Then choose $5 per new listing or unlimited new listings for $25/month or $260/year. Annual membership saves $40 compared with twelve monthly payments and includes one surprise box after signup, with US shipping included. Box contents vary. Membership renews until canceled. Existing listings stay posted after cancellation.</p>';
+  if(sub&&!['canceled','incomplete_expired'].includes(sub.status)) {
+   const note=document.createElement('p');note.textContent=sub.active?'Unlimited posting '+(sub.cancel_at_period_end?'ends ':'renews ')+new Date(sub.period_end).toLocaleDateString()+'.':(sub.plan==='annual'?'Annual':'Monthly')+' plan: '+sub.status+'. New posts use the $5 option until payment is resolved.';box.append(note);
+   if(!sub.cancel_at_period_end&&['active','past_due','unpaid'].includes(sub.status)) {const btn=document.createElement('button');btn.className='btn ghost';btn.textContent='Cancel '+(sub.plan==='annual'?'annual':'monthly')+' renewal';btn.onclick=cancelMembership;box.append(btn);}
+  } else {const btn=document.createElement('button');btn.className='btn';btn.textContent='Choose unlimited — $25/month';btn.onclick=()=>startMembership('monthly');box.append(btn);const annual=document.createElement('button');annual.className='btn';annual.style.margin='10px';annual.textContent='Choose annual + surprise box — $260/year';annual.onclick=()=>startMembership('annual');box.append(annual);}
+ }catch(e){box.textContent=e.message;}
+}
+async function startMembership(plan='monthly') {
+ if(!window.confirm(plan==='annual'?'Join for $260 USD per year with unlimited posting and one surprise box after signup? US shipping included. Renews annually until canceled in My Garage. Billing starts at checkout.':'Subscribe for $25 USD per month with unlimited posting? Renews monthly until canceled in My Garage. Billing starts at checkout.'))return;
+ try {const r=await billingRequest('/api/subscription',{action:'checkout',plan});if(r.url&&new URL(r.url).hostname==='checkout.stripe.com'){location.assign(r.url);return;}if(r.already_subscribed){toast('You already have a membership.');await openMembership();return;}toast('Your subscription payment is processing.');}catch(e){toast(e.message);}
+}
+async function cancelMembership() {
+ if(!window.confirm('Stop your membership renewal? Unlimited posting continues through the paid period. Existing listings stay posted.'))return;
+ try {await billingRequest('/api/subscription',{action:'cancel'});toast('Membership renewal canceled.');await openMembership();}catch(e){toast(e.message);}
+}
+if(typeof openGarage==='function') {
+ const garageWithListings=openGarage;
+ openGarage=async function(){await garageWithListings();if(currentUser)await openMembership();};
+}
+async function membershipReturn(){
+ const state=new URLSearchParams(location.search).get('membership');if(!state||!currentUser)return;
+ history.replaceState(null,'',location.pathname+location.hash);
+ toast(state==='cancel'?'Subscription checkout canceled.':'Checking your membership…');await openGarage();
+}
+if(cloud){cloud.auth.onAuthStateChange(()=>setTimeout(membershipReturn,0));membershipReturn();}
