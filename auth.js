@@ -187,3 +187,55 @@ viewListing=function(id){
  });
  cover.after(gallery);
 };
+
+/* Private owner visitor totals. Anonymous browser IDs; one record per Central-time day. */
+(() => {
+ if(!cloud)return;
+ const ownerEmail='ewinton7754@gmail.com';
+ async function recordSiteVisit(){
+  try{
+   let visitor=localStorage.getItem('wheelswap_visitor_v1');
+   if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(visitor||'')){
+    visitor=crypto.randomUUID();localStorage.setItem('wheelswap_visitor_v1',visitor);
+   }
+   const result=await cloud.from('site_visits').insert({visitor_id:visitor});
+   if(result.error&&result.error.code!=='23505')console.warn('Visitor tracking unavailable');
+  }catch{/* Storage restrictions must never block the marketplace. */}
+ }
+ document.body.insertAdjacentHTML('beforeend','<div class="modal" id="visitorStatsModal" role="dialog" aria-modal="true" aria-labelledby="visitorStatsTitle"><div class="panel"><div class="panelhead"><h2 id="visitorStatsTitle">Website visitors</h2><button class="x" id="closeVisitorStats" aria-label="Close visitor stats">×</button></div><div id="visitorStatsBody" role="status"></div><p class="note">Counts unique browsers, not individual people. Repeat visits from the same browser count once per period. Different devices or cleared browser storage may count again. Tracking starts October 27, 2026; earlier visits are unavailable. Dates use Central Time.</p><button class="btn ghost" id="refreshVisitorStats">Refresh totals</button></div></div>');
+ const modal=$('visitorStatsModal');
+ const close=()=>{modal.classList.remove('open');$('ownerVisitorStats')?.focus();};
+ $('closeVisitorStats').onclick=close;
+ modal.onclick=e=>{if(e.target===modal)close();};
+ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&modal.classList.contains('open'))close();});
+ async function showStats(){
+  modal.classList.add('open');$('closeVisitorStats').focus();
+  $('visitorStatsBody').textContent='Loading visitor totals…';
+  $('refreshVisitorStats').disabled=true;
+  try{
+   const rows=checked(await cloud.rpc('get_site_visitor_stats'));
+   const stats=rows?.[0];if(!stats)throw Error('Visitor totals are unavailable.');
+   const cards=[['Today',stats.today],['Last 7 days',stats.last_7_days],['Last 30 days',stats.last_30_days],['Since tracking began',stats.all_time]];
+   const grid=document.createElement('div');grid.style.cssText='display:grid;grid-template-columns:1fr 1fr;gap:12px';
+   for(const [label,value] of cards){
+    const card=document.createElement('div'),name=document.createElement('div'),number=document.createElement('div');
+    card.style.cssText='padding:18px;background:#10141b;border:1px solid #ffffff20;border-radius:10px';
+    name.className='note';name.textContent=label;number.className='price';number.textContent=Number(value).toLocaleString();
+    card.append(name,number);grid.append(card);
+   }
+   $('visitorStatsBody').replaceChildren(grid);
+  }catch{$('visitorStatsBody').textContent='Unable to load totals. Sign in with your owner account and try Refresh totals.';}
+  finally{$('refreshVisitorStats').disabled=false;}
+ }
+ $('refreshVisitorStats').onclick=showStats;
+ function updateOwnerButton(user){
+  const isOwner=user?.email?.toLowerCase()===ownerEmail;
+  if(!isOwner){$('ownerVisitorStats')?.remove();modal.classList.remove('open');return;}
+  if($('ownerVisitorStats'))return;
+  const button=document.createElement('button');button.id='ownerVisitorStats';button.type='button';button.className='btn ghost';button.textContent='Visitor Stats';button.onclick=showStats;
+  document.querySelector('.nav').append(button);
+ }
+ cloud.auth.onAuthStateChange((_event,session)=>updateOwnerButton(session?.user));
+ cloud.auth.getSession().then(({data})=>updateOwnerButton(data.session?.user)).catch(()=>{});
+ void recordSiteVisit();
+})();
