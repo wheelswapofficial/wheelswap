@@ -51,3 +51,23 @@ test('unverified sellers, account switches, oversized and unsupported photos can
  await assert.rejects(publish({...base,files:[new Blob(['bad'],{type:'text/plain'})]}),/supported/);
  assert.equal(f.tables.listings.length,0);assert.equal(f.objects.size,0);
 });
+const {edit}=require('../listing-uploads');
+test('seller edits existing fields and appends photos without resetting status, charging or duplicating listing',async()=>{
+ const f=fixture();await f.run();const row=f.tables.listings[0];row.availability='pending';const draft={id:row.id,userId:user.id,photos:[]};
+ await edit({client:f.client,user,values:{...values,title:'Updated TIS wheels',price:2000},files:[f.files[0]],draft});
+ assert.equal(f.tables.listings.length,1);assert.equal(row.title,'Updated TIS wheels');assert.equal(row.price,2000);assert.equal(row.status,'active');assert.equal(row.availability,'pending');assert.equal(f.tables.listing_photos.length,3);assert.equal(f.tables.listing_photos[2].sort_order,2);assert.equal(f.state.publishCalls,1);
+});
+test('editing with no added photos preserves every original image',async()=>{
+ const f=fixture();await f.run();const before=structuredClone(f.tables.listing_photos),draft={id:f.draft.id,userId:user.id,photos:[]};
+ await edit({client:f.client,user,values,files:[],draft});assert.deepEqual(f.tables.listing_photos,before);assert.equal(f.state.uploadCalls,2);
+});
+test('editing retries interrupted photo append without duplicate uploads or metadata',async()=>{
+ const f=fixture();await f.run();f.state.failUpload=4;const draft={id:f.draft.id,userId:user.id,photos:[]},args={client:f.client,user,values,files:f.files,draft};
+ await assert.rejects(edit(args),/interrupted/);await edit(args);assert.equal(f.tables.listing_photos.length,4);assert.equal(f.state.uploadCalls,5);assert.deepEqual(f.tables.listing_photos.map(p=>p.sort_order),[0,1,2,3]);
+});
+test('other sellers cannot edit details or append photos; total image cap is enforced',async()=>{
+ const f=fixture();await f.run();const draft={id:f.draft.id,userId:user.id,photos:[]};
+ await assert.rejects(edit({client:f.client,user:{...user,id:'another'},values,files:f.files,draft}),/account/);
+ await assert.rejects(edit({client:f.client,user:{...user,id:'another'},values,files:f.files,draft:{...draft,userId:'another'}}),/Row not found/);
+ await assert.rejects(edit({client:f.client,user,values,files:Array(9).fill(f.files[0]),draft}),/10 photos/);assert.equal(f.state.uploadCalls,2);
+});
