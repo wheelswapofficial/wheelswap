@@ -108,9 +108,10 @@ async function publish(values,file,existingId){if(!currentUser?.email_confirmed_
 const files=Array.isArray(file)?file:(file?[file]:[]);
 if(files.length>10)throw Error('Choose up to 10 photos.');
 for(const photo of files)if(!['image/jpeg','image/png','image/webp'].includes(photo.type)||photo.size>6*1024*1024)throw Error('Use JPG, PNG, or WebP photos under 6 MB each.');
+const optimizedPhotos=[];for(const photo of files)optimizedPhotos.push(await compressListingPhoto(photo));
 checked(await cloud.from('profiles').upsert({id:currentUser.id,display_name:values.seller||'WheelSwap seller'},{onConflict:'id'}));
 checked(await cloud.from('listings').insert(row));
-try{for(const [sortOrder,file] of files.entries()){const path=`${currentUser.id}/${id}/${crypto.randomUUID()}.${file.type.split('/')[1]}`;checked(await cloud.storage.from('listing-images').upload(path,file,{contentType:file.type}));checked(await cloud.from('listing_photos').insert({listing_id:id,storage_path:path,sort_order:sortOrder}));}await publishListingAccess(id)}catch(e){throw Object.assign(Error('Your listing is saved as hidden in My Garage. '+e.message),{draftSavedId:id})}return id;}
+try{for(const [sortOrder,file] of optimizedPhotos.entries()){const path=`${currentUser.id}/${id}/${crypto.randomUUID()}.${file.type.split('/')[1]}`;checked(await cloud.storage.from('listing-images').upload(path,file,{contentType:file.type,cacheControl:'31536000'}));checked(await cloud.from('listing_photos').insert({listing_id:id,storage_path:path,sort_order:sortOrder}));}await publishListingAccess(id)}catch(e){throw Object.assign(Error('Your listing is saved as hidden in My Garage. '+e.message),{draftSavedId:id})}return id;}
 $('sellForm').insertAdjacentHTML('beforeend','<p class="note" id="publishStatus" role="status"></p>');
 $('sellForm').addEventListener('submit',async e=>{e.preventDefault();$('publishStatus').textContent='';const b=e.target.querySelector('[type=submit]');b.disabled=true;try{const values=Object.fromEntries(new FormData(e.target));values.trade=new FormData(e.target).has('trade');await publish(values,selectedListingPhotos);e.target.reset();$('preview').style.display='none';clearListingPhotos();closeModal('sellModal');garageOnly=false;await loadListings();toast('Listing published!')}catch(e){if(e.draftSavedId){document.getElementById('sellForm').reset();$('preview').style.display='none';clearListingPhotos();closeModal('sellModal');await openGarage()}$('publishStatus').textContent=e.message;toast(e.message)}finally{b.disabled=false}});
 function importLocal(id){editContact(id,true)}
@@ -180,9 +181,10 @@ viewListing=function(id){
   const button=document.createElement('button'),img=document.createElement('img');
   button.type='button';button.className='btn ghost';button.style.cssText='flex:0 0 72px;padding:3px';
   button.setAttribute('aria-label','Show photo '+(index+1)+' of '+photos.length);
-  img.src=cloud.storage.from('listing-images').getPublicUrl(photo.storage_path).data.publicUrl;
+  const original=cloud.storage.from('listing-images').getPublicUrl(photo.storage_path).data.publicUrl;
+  img.loading='lazy';img.decoding='async';img.dataset.original=original;img.src=listingImageURL(original,160);
   img.alt='Photo '+(index+1);img.style.cssText='width:64px;height:64px;object-fit:cover;border-radius:5px';
-  button.onclick=()=>{cover.src=img.src;cover.alt='Listing photo '+(index+1)+' of '+photos.length};
+  button.onclick=()=>{cover.dataset.original=original;cover.src=listingImageURL(original,1600);cover.alt='Listing photo '+(index+1)+' of '+photos.length};
   button.append(img);gallery.append(button);
  });
  cover.after(gallery);

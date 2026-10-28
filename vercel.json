@@ -1,0 +1,17 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "images": {
+    "sizes": [160, 640, 1600],
+    "qualities": [75],
+    "formats": ["image/webp"],
+    "minimumCacheTTL": 2592000,
+    "remotePatterns": [{
+      "protocol": "https",
+      "hostname": "gjlmnoyznepvuvzvkjqn.supabase.co",
+      "port": "",
+      "pathname": "^/storage/v1/object/public/listing-images/[a-f0-9-]+/[a-f0-9-]+/[a-f0-9-]+\\.(jpeg|jpg|png|webp)$",
+      "search": ""
+    }],
+    "dangerouslyAllowSVG": false
+  }
+}
