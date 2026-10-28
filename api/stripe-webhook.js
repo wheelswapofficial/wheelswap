@@ -1,4 +1,4 @@
-const b=require('../server/billing'),s=require('../server/subscriptions');
+const b=require('../server/billing'),s=require('../server/subscriptions'),f=require('../server/featured');
 module.exports=async function handler(req,res) {
   if(!b.method(req,res,'POST')) return;
   let c,client,event;
@@ -14,7 +14,8 @@ module.exports=async function handler(req,res) {
   if(event.livemode!==c.live) return res.status(400).json({error:'Environment mismatch.'});
   try {
     if(['checkout.session.completed','checkout.session.async_payment_succeeded'].includes(event.type)) {
-      if(event.data.object.metadata?.order_id) await b.fulfill(c,client,event.data.object.id);
+      if(event.data.object.metadata?.kind===f.KIND)await f.fulfill(c,client,event.data.object.id);
+      else if(event.data.object.metadata?.order_id) await b.fulfill(c,client,event.data.object.id);
     }
     const obj=event.data.object;
     if(event.type.startsWith('customer.subscription.')&&s.isPlan(obj.metadata?.plan))await s.sync(c,client,obj.id);

@@ -1,0 +1,52 @@
+const {test}=require('node:test');
+const assert=require('node:assert/strict'),fs=require('node:fs');
+const {PGlite}=require('@electric-sql/pglite');
+const {matches}=require('../search-utils');
+const A='11111111-1111-4111-8111-111111111111',B='22222222-2222-4222-8222-222222222222',L='aaaaaaaa-aaaa-4aaa-8aaa-000000000001';
+const BASE=`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;create table auth.users(id uuid primary key);create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claims',true)::jsonb->>'sub','')::uuid $$;create schema wheelswap_billing;
+create table public.listings(id uuid primary key,seller_id uuid references auth.users(id),title text not null,price numeric not null,wheel_diameter numeric,wheel_width numeric,bolt_pattern text,brand text,city text not null,state text not null,zip_code text,description text not null default '',condition text,pickup_available boolean default true,shipping_available boolean default false,trades_accepted boolean default false,status text default 'active',created_at timestamptz default now(),updated_at timestamptz default now());
+create table public.listing_photos(id uuid primary key default gen_random_uuid(),listing_id uuid references public.listings(id),storage_path text,sort_order int default 0);
+grant usage on schema auth,public to anon,authenticated,service_role;grant select,insert,update,delete on public.listings,public.listing_photos to authenticated;grant select on public.listings,public.listing_photos to anon;alter table public.listings enable row level security;create policy view_listing on public.listings for select using(status='active' or seller_id=(select auth.uid()));create policy edit_own on public.listings for update to authenticated using(seller_id=(select auth.uid())) with check(seller_id=(select auth.uid()));alter table public.listing_photos enable row level security;create policy own_photos on public.listing_photos to authenticated using(exists(select 1 from public.listings l where l.id=listing_id and l.seller_id=(select auth.uid()))) with check(exists(select 1 from public.listings l where l.id=listing_id and l.seller_id=(select auth.uid())));`;
+test('listing edits are atomic and owner-only; saved searches are private; paid featuring cannot be forged or replayed',async()=>{
+ const db=new PGlite();
+ const role=(name,uid,sql,args=[])=>db.transaction(async tx=>{await tx.exec('set local role '+name);await tx.query("select set_config('request.jwt.claims',$1,true)",[JSON.stringify(uid?{sub:uid,role:name}:{role:name})]);return tx.query(sql,args);});
+ const user=(uid,sql,args)=>role('authenticated',uid,sql,args),service=(sql,args)=>role('service_role',null,sql,args);
+ try{
+  await db.exec(BASE);await db.exec(fs.readFileSync('database/marketplace-upgrades.sql','utf8'));
+  await db.query('insert into auth.users values($1),($2)',[A,B]);
+  await db.query("insert into public.listings(id,seller_id,title,price,city,state,zip_code,wheel_diameter,bolt_pattern) values($1,$2,'Original wheels',1000,'Anniston','AL','36206',22,'6x135')",[L,A]);
+  const old=(await db.query('select updated_at from public.listings where id=$1',[L])).rows[0].updated_at;
+  const details={title:'Updated wheels',price:1500,size:24,width:12,bolt:'6x135',brand:'TIS',city:'Anniston',state:'AL',zip:'36206',description:'New details',condition:'good',pickup:true,shipping:false,trade:true};
+  const path=A+'/'+L+'/aaaaaaaa-aaaa-4aaa-8aaa-000000000002.jpeg';
+  await assert.rejects(user(B,'select public.edit_listing($1,$2,$3,$4)',[L,old,details,[path]]),/Listing unavailable/);
+  await assert.rejects(user(A,'select public.edit_listing($1,$2,$3,$4)',[L,old,details,['someone/else/photo.jpg']]),/Invalid photo/);
+  assert.equal((await db.query('select price from public.listings where id=$1',[L])).rows[0].price,'1000');
+  await user(A,'select public.edit_listing($1,$2,$3,$4)',[L,old,details,[path]]);
+  const edited=(await db.query('select * from public.listings where id=$1',[L])).rows[0];assert.equal(edited.price,'1500');assert.equal(edited.seller_id,A);assert.equal(edited.status,'active');
+  assert.equal((await db.query('select storage_path from public.listing_photos where listing_id=$1',[L])).rows[0].storage_path,path);
+  await assert.rejects(user(A,'select public.edit_listing($1,$2,$3,$4)',[L,old,details,[]]),/listing changed/);
+  await assert.rejects(user(A,'select public.edit_listing($1,$2,$3,$4)',[L,edited.updated_at,{...details,condition:'good'},[path,path]]),/Duplicate/);
+  await user(A,"insert into public.saved_searches(user_id,name,filters) values($1,'My wheels',$2)",[A,{size:'24'}]);
+  assert.equal((await user(B,'select * from public.saved_searches')).rows.length,0);
+  await assert.rejects(user(B,"insert into public.saved_searches(user_id,name,filters) values($1,'Spoof',$2)",[A,{size:'26'}]),/row-level security/);
+  await assert.rejects(role('anon',null,'select * from public.saved_searches'),/permission denied/);
+  for(let i=1;i<20;i++)await user(A,"insert into public.saved_searches(user_id,name,filters) values($1,'Saved',$2)",[A,{search:String(i)}]);
+  await assert.rejects(user(A,"insert into public.saved_searches(user_id,name,filters) values($1,'Too many',$2)",[A,{search:'21'}]),/up to 20/);
+  await assert.rejects(user(A,'select public.feature_prepare($1,$2)',[A,L]),/permission denied/);
+  await assert.rejects(service('select public.feature_prepare($1,$2)',[B,L]),/own available listing/);
+  const order=(await service('select public.feature_prepare($1,$2) as o',[A,L])).rows[0].o;
+  const again=(await service('select public.feature_prepare($1,$2) as o',[A,L])).rows[0].o;assert.equal(again.order_id,order.order_id);
+  await service('select public.feature_session($1,$2,$3,false)',[order.order_id,A,'cs_test_feature']);
+  await assert.rejects(service('select public.feature_fulfill($1,$2,$3,$4)',[order.order_id,A,L,'cs_test_other']),/does not match/);
+  const paid=(await service('select public.feature_fulfill($1,$2,$3,$4) as r',[order.order_id,A,L,'cs_test_feature'])).rows[0].r;
+  const replay=(await service('select public.feature_fulfill($1,$2,$3,$4) as r',[order.order_id,A,L,'cs_test_feature'])).rows[0].r;assert.equal(replay.ends_at,paid.ends_at);
+  assert.equal((await role('anon',null,'select * from public.featured_listings')).rows.length,1);
+  await assert.rejects(user(A,'update public.featured_listings set ends_at=now()+interval \'50 years\''),/permission denied/);
+  await db.query("update public.listings set status='sold' where id=$1",[L]);assert.equal((await role('anon',null,'select * from public.featured_listings')).rows.length,0);
+ }finally{await db.close();}
+});
+test('saved-search matching handles aliases, price boundaries and shipping',()=>{
+ const l={title:'22 inch TIS wheels',wheel_diameter:22,wheel_width:12,bolt_pattern:'6x139.7',state:'AL',price:2000,shipping_available:true,pickup_available:false,trades_accepted:true};
+ assert.equal(matches(l,{size:'22',bolt:'6x5.5',maxprice:'2000',minprice:'2000',delivery:'shipping',type:'trade'}),true);
+ for(const f of [{size:'24'},{state:'IL'},{maxprice:'1999'},{minprice:'2001'},{delivery:'pickup'},{search:'KG1'}])assert.equal(matches(l,f),false);
+});
