@@ -24,7 +24,7 @@ module.exports=async function(req,res) {
   if(a.session_id) {
    const session=await client.checkout.sessions.retrieve(a.session_id);
    if(session.status==='open'&&session.url) {
-    if(session.metadata?.plan===spec.lookup)return res.json({url:session.url});
+    if(session.metadata?.plan===spec.lookup&&session.allow_promotion_codes===true)return res.json({url:session.url});
     await client.checkout.sessions.expire(session.id);
     session.status='expired';
    }
@@ -33,7 +33,7 @@ module.exports=async function(req,res) {
    a=await b.rpc(c,'billing_subscription_account',{p_seller_id:user.id,p_session_id:a.session_id,p_expire:true});
   }
   const session=await client.checkout.sessions.create({
-   mode:'subscription',customer:a.customer_id,line_items:[{price:p.id,quantity:1}],
+   mode:'subscription',allow_promotion_codes:true,customer:a.customer_id,line_items:[{price:p.id,quantity:1}],
    subscription_data:{metadata:{seller_id:user.id,plan:spec.lookup}},metadata:{seller_id:user.id,plan:spec.lookup,...(plan==='annual'?{surprise_box:'one_at_signup'}:{})},
    ...(plan==='annual'?{shipping_address_collection:{allowed_countries:['US']},customer_update:{shipping:'auto'}}:{}),
    success_url:c.APP_URL+'/?membership=success',cancel_url:c.APP_URL+'/?membership=cancel',
