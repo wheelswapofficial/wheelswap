@@ -114,7 +114,7 @@ function showRetainedPhotos(){
  for(const photo of editingPhotos){const img=document.createElement('img');img.src=cloud.storage.from('listing-images').getPublicUrl(photo.storage_path).data.publicUrl;img.alt='Existing listing photo';img.style.cssText='width:80px;height:80px;object-fit:cover;border-radius:8px';gallery.append(img);}retainedPhotos.append(gallery);
 }
 function resetListingEditor(){
- editingListing=null;editingPhotos=[];editingDraft=null;$('sellForm').reset();clearListingPhotos();retainedPhotos.replaceChildren();sellNote.textContent=newListingNote;sellHeading.textContent='List your wheels';sellSubmit.textContent='Publish Listing';$('publishStatus').textContent='';photoPicker.disabled=false;
+ editingListing=null;editingPhotos=[];editingDraft=null;$('sellForm').reset();clearListingPhotos();retainedPhotos.replaceChildren();sellNote.textContent=newListingNote;sellHeading.textContent='List your wheels';sellSubmit.textContent='Publish Listing';$('publishStatus').textContent='';photoPicker.disabled=false;updateListingCategory();
 }
 const openNewListing=openSell;
 openSell=function(){
@@ -130,10 +130,10 @@ function editListing(id){
  if(editingListing&&editingListing.id===l.id){$('sellModal').classList.add('open');return;}
  if(editingDraft?.started){toast('Retry saving your current photo edits before switching listings.');return;}
  resetListingEditor();editingListing=l;editingPhotos=[...(l.listing_photos||[])].sort((a,b)=>a.sort_order-b.sort_order);editingDraft={id:l.id,userId:currentUser.id,photos:[]};
- const values={title:l.title,price:l.price,size:String(l.wheel_diameter||l.size||''),width:l.wheel_width||'',bolt:l.bolt_pattern||l.bolt,brand:l.brand||'',city:l.city||'',state:l.state||'',zip:l.zip_code||'',delivery:l.shipping_available?(l.pickup_available?'both':'shipping'):'pickup',email:l.contact_email||'',seller:l.seller_name||'',condition:({like_new:'Like New',fair:'Used - Fair',good:'Used - Good'})[l.condition]||'Used - Good',description:l.description||''};
+ const values={category:l.category||'wheels',tire_size:l.tire_size||'',title:l.title,price:l.price,size:String(l.wheel_diameter||l.size||''),width:l.wheel_width||'',bolt:l.bolt_pattern||l.bolt,brand:l.brand||'',city:l.city||'',state:l.state||'',zip:l.zip_code||'',delivery:l.shipping_available?(l.pickup_available?'both':'shipping'):'pickup',email:l.contact_email||'',seller:l.seller_name||'',condition:({like_new:'Like New',fair:'Used - Fair',good:'Used - Good'})[l.condition]||'Used - Good',description:l.description||''};
  for(const [key,value] of Object.entries(values)){const input=$('sellForm').elements.namedItem(key);if(input.tagName==='SELECT'&&value&&![...input.options].some(option=>option.value===String(value)))input.add(new Option(String(value),String(value)));input.value=value;}
  $('sellForm').elements.namedItem('trade').checked=!!l.trades_accepted;$('sellForm').elements.namedItem('public_contact').checked=true;
- sellNote.textContent='Update this listing and add photos. Existing photos stay in place. Saving edits does not create a new listing or change its current status.';sellHeading.textContent='Edit your listing';sellSubmit.textContent='Save changes';showRetainedPhotos();renderListingPhotos();closeModal('detailModal');$('sellModal').classList.add('open');
+ sellNote.textContent='Update this listing and add photos. Existing photos stay in place. Saving edits does not create a new listing or change its current status.';sellHeading.textContent='Edit your listing';sellSubmit.textContent='Save changes';updateListingCategory();showRetainedPhotos();renderListingPhotos();closeModal('detailModal');$('sellModal').classList.add('open');
 }
 
 async function publish(values,file,existingId){

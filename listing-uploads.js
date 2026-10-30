@@ -1,7 +1,7 @@
 /* Resumable publishing. The browser key and the current seller's RLS remain in force. */
 (function(root){
  const checked=result=>{if(result.error)throw Object.assign(Error(result.error.message),result.error);return result.data;};
- function listingRow(user,values,id){return {id,seller_id:user.id,seller_name:values.seller.trim(),contact_email:values.email.trim(),title:values.title,price:Number(values.price),wheel_diameter:Number(values.size),wheel_width:Number(values.width)||null,bolt_pattern:values.bolt,brand:values.brand||null,city:values.city,state:values.state,zip_code:values.zip,description:values.description||'',condition:({'Like New':'like_new','Used - Fair':'fair','Used - Good':'good'})[values.condition]||'good',category:'wheels',pickup_available:values.delivery!=='shipping',shipping_available:values.delivery!=='pickup',trades_accepted:!!values.trade,status:'hidden'};}
+ function listingRow(user,values,id){return {id,seller_id:user.id,seller_name:values.seller.trim(),contact_email:values.email.trim(),title:values.title,price:Number(values.price),wheel_diameter:values.category==='tires'?null:(Number(values.size)||null),wheel_width:values.category==='tires'?null:(Number(values.width)||null),bolt_pattern:values.category==='tires'?null:(values.bolt||null),tire_size:values.category==='wheels'?null:(values.tire_size||null),brand:values.brand||null,city:values.city,state:values.state,zip_code:values.zip,description:values.description||'',condition:({'Like New':'like_new','Used - Fair':'fair','Used - Good':'good'})[values.condition]||'good',category:['wheels','tires','wheel_tire_package'].includes(values.category)?values.category:'wheels',pickup_available:values.delivery!=='shipping',shipping_available:values.delivery!=='pickup',trades_accepted:!!values.trade,status:'hidden'};}
  async function publish({client,user,values,files,draft,publishAccess,progress=()=>{}}){
   if(!user?.email_confirmed_at)throw Error('Sign in with a verified email first.');
   if(!values.public_contact||!values.email?.trim()||!values.seller?.trim())throw Error('Enter your public seller name and contact email and agree to share them.');
@@ -54,7 +54,7 @@
   const known=new Set(draft.photos.filter(Boolean).map(photo=>photo.path));
   if(existing.filter(photo=>!known.has(photo.storage_path)).length+files.length>10)throw Error('A listing can have up to 10 photos including existing photos.');
   if(draft.offset==null)draft.offset=existing.reduce((max,photo)=>Math.max(max,photo.sort_order),-1)+1;
-  const row=listingRow(user,values,id);delete row.id;delete row.seller_id;delete row.status;delete row.category;
+  const row=listingRow(user,values,id);delete row.id;delete row.seller_id;delete row.status;
   progress('Saving listing details…');
   checked(await client.from('listings').update(row).eq('id',id).eq('seller_id',user.id).select().single());
   for(const [index,file] of files.entries()){

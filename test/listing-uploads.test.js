@@ -71,3 +71,14 @@ test('other sellers cannot edit details or append photos; total image cap is enf
  await assert.rejects(edit({client:f.client,user:{...user,id:'another'},values,files:f.files,draft:{...draft,userId:'another'}}),/Row not found/);
  await assert.rejects(edit({client:f.client,user,values,files:Array(9).fill(f.files[0]),draft}),/10 photos/);assert.equal(f.state.uploadCalls,2);
 });
+test('all selling categories persist, with tire-only specs independent of rims',async()=>{
+ for(const category of ['tires','wheels','wheel_tire_package']){
+  const f=fixture();
+  await publish({client:f.client,user,values:{...values,category,tire_size:'35x12.50R24'},files:[],draft:f.draft,publishAccess:async()=>{}});
+  const row=f.tables.listings[0];
+  assert.equal(row.category,category);
+  assert.equal(row.tire_size,category==='wheels'?null:'35x12.50R24');
+  assert.equal(row.wheel_diameter,category==='tires'?null:24);
+  assert.equal(row.bolt_pattern,category==='tires'?null:'8x170');
+ }
+});

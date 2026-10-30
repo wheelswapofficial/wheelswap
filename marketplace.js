@@ -1,6 +1,15 @@
+const LISTING_CATEGORIES={wheels:'Rims only',tires:'Tires only',wheel_tire_package:'Wheels + tires'};
+function updateListingCategory(){
+ const form=$('sellForm'),category=form.elements.category.value,tires=category==='tires',hasTires=category!=='wheels';
+ form.querySelectorAll('[data-wheel-spec]').forEach(el=>{el.hidden=tires;el.querySelector('input,select').disabled=tires;});
+ form.elements.size.required=!tires;form.elements.bolt.required=!tires;
+ $('tireSizeField').hidden=!hasTires;form.elements.tire_size.disabled=!hasTires;form.elements.tire_size.required=hasTires;
+}
 /* Buyer discovery and shareable listing details; preserves existing listing storage. */
 (() => {
  const box=document.querySelector('.searchbox');
+ const categoryControl=document.createElement('div');categoryControl.innerHTML='<label for="categoryFilter">WHAT ARE YOU LOOKING FOR?</label><select id="categoryFilter"><option value="">Wheels & tires — all</option>'+Object.entries(LISTING_CATEGORIES).map(([value,label])=>'<option value="'+value+'">'+label+'</option>').join('')+'</select>';box.append(categoryControl);$('categoryFilter').addEventListener('change',()=>render());
+ updateListingCategory();
  const controls=[['filterWidth','WHEEL WIDTH (IN)','number','Any width'],['minprice','MIN PRICE ($)','number','Any price']];
  for(const [id,title,type,placeholder] of controls){const div=document.createElement('div');div.innerHTML=`<label for="${id}">${title}</label><input id="${id}" type="${type}" min="0" step="any" placeholder="${placeholder}">`;box.append(div);$(id).addEventListener('input',()=>render());}
  const sort=document.createElement('div');sort.innerHTML='<label for="listingSort">SORT BY</label><select id="listingSort"><option value="newest">Newest first</option><option value="low">Price: low to high</option><option value="high">Price: high to low</option><option value="diameter">Wheel diameter</option></select>';box.append(sort);$('listingSort').addEventListener('change',()=>render());
@@ -10,14 +19,15 @@
  const baseRender=render;
  render=function(){
   const all=listings,bolt=$('bolt').value,width=$('filterWidth').value,min=$('minprice').value;
-  listings=all.filter(l=>(!bolt||pattern(l.bolt)===pattern(bolt))&&(width===''||(l.width!==null&&l.width!==''&&Number(l.width)===Number(width)))&&(min===''||Number(l.price)>=Number(min)));
+  listings=all.filter(l=>(!$('categoryFilter').value||(l.category||'wheels')===$('categoryFilter').value)&&(!bolt||pattern(l.bolt)===pattern(bolt))&&(width===''||(l.width!==null&&l.width!==''&&Number(l.width)===Number(width)))&&(min===''||Number(l.price)>=Number(min)));
   const order=$('listingSort').value;
   listings=[...listings].sort((a,b)=>order==='low'?Number(a.price)-Number(b.price):order==='high'?Number(b.price)-Number(a.price):order==='diameter'?Number(a.size)-Number(b.size):(Date.parse(b.created_at)||0)-(Date.parse(a.created_at)||0));
   $('bolt').value='';
   try{baseRender();}finally{listings=all;$('bolt').value=bolt;}
+  for(const card of document.querySelectorAll('.listing')){const l=all.find(row=>String(row.id)===card.dataset.listingId);if(l){const tag=document.createElement('div');tag.className='meta';tag.textContent=LISTING_CATEGORIES[l.category||'wheels']||'Rims only';card.querySelector('.content').prepend(tag);}}
   if(!$('listings').querySelector('.listing')&&all.length&&!garageOnly){$('listings').querySelector('.empty').innerHTML='No sets match these filters. Try a wider search.<br><br><button class="btn ghost" onclick="resetFilters()">Clear filters</button>';}
  };
- const clearExtra=()=>{['filterWidth','minprice'].forEach(id=>$(id).value='');$('listingSort').value='newest';};
+ const clearExtra=()=>{['filterWidth','minprice','categoryFilter'].forEach(id=>$(id).value='');$('listingSort').value='newest';};
  const baseReset=resetFilters;resetFilters=function(){clearExtra();baseReset();};
  const baseGarage=openGarage;openGarage=function(){clearExtra();return baseGarage();};
  const baseSaved=showSaved;showSaved=function(){clearExtra();return baseSaved();};
@@ -27,7 +37,7 @@
   baseView(id);const l=listings.find(x=>String(x.id)===String(id));if(!l)return;
   const body=$('detailBody');
   const specs=document.createElement('dl');specs.className='listing-specs';
-  const facts=[['Diameter',l.size?l.size+' in':'Not specified'],['Width',l.width?l.width+' in':'Not specified'],['Bolt pattern',l.bolt||'Not specified'],['Condition',cleanCondition(l.condition)],['Brand',l.brand||'Not specified'],['Location',l.location||'Not specified'],['Delivery',l.delivery==='both'?'Pickup or shipping':l.delivery==='shipping'?'Shipping available':'Local pickup'],['Trades',l.trade?'Welcome':'Contact seller']];
+  const facts=[['Selling',LISTING_CATEGORIES[l.category||'wheels']||'Rims only'],...(l.category==='tires'?[]:[['Diameter',l.size?l.size+' in':'Not specified'],['Width',l.width?l.width+' in':'Not specified'],['Bolt pattern',l.bolt||'Not specified']]),...(l.tire_size?[['Tire size',l.tire_size]]:[]),['Condition',cleanCondition(l.condition)],['Brand',l.brand||'Not specified'],['Location',l.location||'Not specified'],['Delivery',l.delivery==='both'?'Pickup or shipping':l.delivery==='shipping'?'Shipping available':'Local pickup'],['Trades',l.trade?'Welcome':'Contact seller']];
   specs.innerHTML=facts.map(([name,value])=>`<div><dt>${esc(name)}</dt><dd>${esc(value)}</dd></div>`).join('');
   const description=body.querySelector('.details');description.before(specs);
   const note=document.createElement('p');note.className='note';note.textContent='Matching bolt patterns do not guarantee vehicle fitment. Confirm offset, center bore, load rating, brake clearance, tire size, tread, damage, TPMS sensors and included lug nuts with the seller.';description.after(note);
