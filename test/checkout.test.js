@@ -6,7 +6,7 @@ const Stripe=require('stripe');
 const b=require('../server/billing');
 const create=require('../api/create-checkout-session'),status=require('../api/checkout-status'),webhook=require('../api/stripe-webhook');
 const uid='11111111-1111-4111-8111-111111111111',listing='aaaaaaaa-aaaa-4aaa-8aaa-000000000004',order='bbbbbbbb-bbbb-4bbb-8bbb-000000000001';
-const session={id:'cs_test_1234567890123',livemode:false,status:'complete',payment_status:'paid',mode:'payment',currency:'usd',amount_total:500,line_items:{data:[{price:{id:'price_verified'},quantity:1}]},metadata:{seller_id:uid,listing_id:listing,order_id:order},payment_intent:'pi_verified',customer:'cus_verified'};
+const session={id:'cs_test_1234567890123',livemode:false,status:'complete',payment_status:'paid',mode:'payment',currency:'usd',amount_total:250,line_items:{data:[{price:{id:'price_verified'},quantity:1}]},metadata:{seller_id:uid,listing_id:listing,order_id:order},payment_intent:'pi_verified',customer:'cus_verified'};
 function res(){return {headers:{},code:200,setHeader(k,v){this.headers[k]=v},status(s){this.code=s;return this},json(x){this.body=x;return this}};}
 function env(){Object.assign(process.env,{STRIPE_SECRET_KEY:'sk_test_mock',STRIPE_WEBHOOK_SECRET:'whsec_mock',STRIPE_LISTING_PRICE_ID:'price_verified',SUPABASE_URL:'https://test.supabase.co',SUPABASE_PUBLISHABLE_KEY:'public',SUPABASE_SERVICE_ROLE_KEY:'private',APP_URL:'https://www.wheelswapusa.com',STRIPE_LIVEMODE:'false'});}
 test('server: identity, prices, redirects, idempotency, settlement and signed raw webhooks',async()=>{
@@ -17,7 +17,7 @@ test('server: identity, prices, redirects, idempotency, settlement and signed ra
  b.rpc=async(c,name,body)=>{calls.push({name,body});return name==='billing_prepare_listing'?prep:{fulfilled:true};};
  let returned={id:session.id,payment_status:'unpaid',status:'open',url:'https://checkout.stripe.com/pay'};
  const stripeInstance=new Stripe('sk_test_mock');
- const fake={prices:{retrieve:async()=>({active:true,livemode:false,type:'one_time',unit_amount:500,currency:'usd'})},checkout:{sessions:{create:async(p,o)=>{params=p;key=o.idempotencyKey;return returned},retrieve:async()=>session}},webhooks:stripeInstance.webhooks};
+ const fake={prices:{retrieve:async()=>({active:true,livemode:false,type:'one_time',unit_amount:250,currency:'usd'})},checkout:{sessions:{create:async(p,o)=>{params=p;key=o.idempotencyKey;return returned},retrieve:async()=>session}},webhooks:stripeInstance.webhooks};
  b.stripe=()=>fake;
  try {
   let r=res();await create({method:'GET',headers:{}},r);assert.equal(r.code,405);
