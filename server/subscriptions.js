@@ -41,7 +41,7 @@ async function fulfillBox(c,client,id) {
  const session=await client.checkout.sessions.retrieve(id,{expand:['line_items']});
  if(session.metadata?.plan!==ANNUAL||session.payment_status!=='paid')return;
  const p=await price(c,client,'annual'),items=session.line_items?.data;
- if(session.livemode!==c.live||session.mode!=='subscription'||session.currency!=='usd'||session.amount_total!==26000||items?.length!==1||items[0].price?.id!==p.id||items[0].quantity!==1)throw b.httpError(409,'Annual checkout details do not match.');
+ if(session.livemode!==c.live||session.mode!=='subscription'||session.currency!=='usd'||session.amount_subtotal!==26000||items?.length!==1||items[0].price?.id!==p.id||items[0].quantity!==1)throw b.httpError(409,'Annual checkout details do not match.');
  const shipping=session.collected_information?.shipping_details||session.shipping_details;
  if(!shipping?.name||!shipping.address?.line1||shipping.address.country!=='US')throw b.httpError(409,'Surprise box shipping address is missing.');
  const sub=await sync(c,client,typeof session.subscription==='string'?session.subscription:session.subscription.id,session.metadata.seller_id);
