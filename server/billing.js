@@ -43,8 +43,8 @@ async function fulfill(c, client, id, expectedSeller) {
   if(session.livemode!==c.live) throw httpError(409,'Checkout environment mismatch.');
   if(session.payment_status!=='paid') return {fulfilled:false};
   const items=session.line_items?.data;
-  if(session.mode!=='payment' || session.currency!=='usd' || session.amount_total!==500 ||
-     items?.length!==1 || items[0].price?.id!==c.STRIPE_LISTING_PRICE_ID || items[0].quantity!==1 ||
+  if(session.mode!=='payment' || session.currency!=='usd' || !((session.amount_total===250 && items?.[0]?.price?.id===c.STRIPE_LISTING_PRICE_ID) || (c.live && session.amount_total===500 && items?.[0]?.price?.id==='price_1UTZVJEVIy0xxEcyM09jBALd')) ||
+     items?.length!==1 || items[0].quantity!==1 ||
      !UUID.test(session.metadata?.order_id||'') || !UUID.test(session.metadata?.listing_id||'') || !UUID.test(session.metadata?.seller_id||'')) {
     throw httpError(409,'Payment details do not match this listing. Please contact support.');
   }
