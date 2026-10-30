@@ -9,7 +9,7 @@ module.exports=async function handler(req,res) {
     let order=await b.rpc(c,'billing_prepare_listing',{p_seller_id:user.id,p_listing_id:req.body.listing_id});
     if(order.published) return res.json(order);
     const client=b.stripe(c),price=await client.prices.retrieve(c.STRIPE_LISTING_PRICE_ID);
-    if(!price.active || price.livemode!==c.live || price.type!=='one_time' || price.unit_amount!==500 || price.currency!=='usd') throw b.httpError(503,'The listing price needs configuration. Your listing is saved.');
+    if(!price.active || price.livemode!==c.live || price.type!=='one_time' || price.unit_amount!==250 || price.currency!=='usd') throw b.httpError(503,'The listing price needs configuration. Your listing is saved.');
     if(order.session_id) {
       const existing=await client.checkout.sessions.retrieve(order.session_id);
       if(existing.payment_status==='paid') {
@@ -17,7 +17,11 @@ module.exports=async function handler(req,res) {
         return res.json({published:true});
       }
       if(existing.status==='complete') return res.json({processing:true});
-      if(existing.status==='open' && existing.url) return res.json({url:existing.url});
+      if(existing.status==='open' && existing.url) {
+        if(existing.amount_total===250) return res.json({url:existing.url});
+        await client.checkout.sessions.expire(existing.id);
+        existing.status='expired';
+      }
       if(existing.status!=='expired') throw b.httpError(409,'Please retry from My Garage.');
       await b.rpc(c,'billing_checkout_session',{p_order_id:order.order_id,p_seller_id:user.id,p_session_id:existing.id,p_expire:true});
       order=await b.rpc(c,'billing_prepare_listing',{p_seller_id:user.id,p_listing_id:req.body.listing_id});
