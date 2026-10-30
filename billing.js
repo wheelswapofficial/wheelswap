@@ -12,7 +12,7 @@ async function publishListingAccess(id) {
  if(result.published)return;
  if(result.processing)throw Error('Your payment is processing. Your listing will publish when payment succeeds.');
  if(!result.url||new URL(result.url).hostname!=='checkout.stripe.com')throw Error('Unable to open checkout. Retry from My Garage.');
- const accepted=window.confirm('Your free posting period has ended. Continue to Stripe to pay $5 for this listing? Cancel keeps your draft in My Garage.');
+ const accepted=window.confirm('Your free posting period has ended. Continue to Stripe to pay $2.50 for this listing? Cancel keeps your draft in My Garage.');
  if(accepted)location.assign(result.url);
  throw Error(accepted?'Opening secure checkout. Your draft is saved.':'Your draft is saved in My Garage. Publish it when you are ready.');
 }
@@ -48,9 +48,9 @@ async function openMembership() {
  box.textContent='Loading posting plan…';box.scrollIntoView({behavior:'smooth',block:'center'});
  try {
   const result=await billingRequest('/api/subscription',{action:'status'}),sub=result.subscription;
-  box.innerHTML='<h3>Your posting plan</h3><p>First 30 days free from your first publish attempt. Then choose $5 per new listing or unlimited new listings for $25/month or $260/year. Annual membership saves $40 compared with twelve monthly payments and includes one surprise box with a shirt and little goodies after signup, with US shipping included. Goodies vary. Membership renews until canceled. Existing listings stay posted after cancellation.</p>';
+  box.innerHTML='<h3>Your posting plan</h3><p>First 30 days free from your first publish attempt. Then choose $2.50 per new listing or unlimited new listings for $25/month or $260/year. Annual membership saves $40 compared with twelve monthly payments and includes one surprise box with a shirt and little goodies after signup, with US shipping included. Goodies vary. Membership renews until canceled. Existing listings stay posted after cancellation.</p>';
   if(sub&&!['canceled','incomplete_expired'].includes(sub.status)) {
-   const note=document.createElement('p');note.textContent=sub.active?'Unlimited posting '+(sub.cancel_at_period_end?'ends ':'renews ')+new Date(sub.period_end).toLocaleDateString()+'.':(sub.plan==='annual'?'Annual':'Monthly')+' plan: '+sub.status+'. New posts use the $5 option until payment is resolved.';box.append(note);
+   const note=document.createElement('p');note.textContent=sub.active?'Unlimited posting '+(sub.cancel_at_period_end?'ends ':'renews ')+new Date(sub.period_end).toLocaleDateString()+'.':(sub.plan==='annual'?'Annual':'Monthly')+' plan: '+sub.status+'. New posts use the $2.50 option until payment is resolved.';box.append(note);
    if(!sub.cancel_at_period_end&&['active','past_due','unpaid'].includes(sub.status)) {const btn=document.createElement('button');btn.className='btn ghost';btn.textContent='Cancel '+(sub.plan==='annual'?'annual':'monthly')+' renewal';btn.onclick=cancelMembership;box.append(btn);}
   } else {const btn=document.createElement('button');btn.className='btn';btn.textContent='Choose unlimited — $25/month';btn.onclick=()=>startMembership('monthly');box.append(btn);const annual=document.createElement('button');annual.className='btn';annual.style.margin='10px';annual.textContent='Choose annual + surprise box — $260/year';annual.onclick=()=>startMembership('annual');box.append(annual);}
  }catch(e){box.textContent=e.message;}
