@@ -7,7 +7,7 @@ async function price(c,client,plan='monthly') {
  const spec=Object.hasOwn(PLANS,plan)?PLANS[plan]:null;if(!spec)throw b.httpError(400,'Choose a valid membership plan.');
  const prices=await client.prices.list({lookup_keys:[spec.lookup],active:true,limit:2});
  const p=prices.data[0];
- if(prices.data.length!==1||p.livemode!==c.live||p.unit_amount!==spec.amount||p.currency!=='usd'||p.type!=='recurring'||p.recurring?.interval!==spec.interval||p.recurring.interval_count!==1) throw b.httpError(503,'This membership is temporarily unavailable. You can still use the $5 listing option.');
+ if(prices.data.length!==1||p.livemode!==c.live||p.unit_amount!==spec.amount||p.currency!=='usd'||p.type!=='recurring'||p.recurring?.interval!==spec.interval||p.recurring.interval_count!==1) throw b.httpError(503,'This membership is temporarily unavailable. You can still use the $2.50 listing option.');
  return p;
 }
 async function account(c,user) {
