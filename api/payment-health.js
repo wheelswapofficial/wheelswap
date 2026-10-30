@@ -10,7 +10,7 @@ module.exports = async function handler(req, res) {
       return res.status(503).json({ready:false});
     }
     res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=60');
-    return res.json({ready:true, live:c.live, listing_fee:5, currency:'USD'});
+    return res.json({ready:true, live:c.live, listing_fee:2.50, currency:'USD'});
   } catch {
     return res.status(503).json({ready:false});
   }
