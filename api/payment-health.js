@@ -6,7 +6,7 @@ module.exports = async function handler(req, res) {
     const c = b.config();
     const price = await b.stripe(c).prices.retrieve(c.STRIPE_LISTING_PRICE_ID);
     if (!price.active || price.livemode !== c.live || price.type !== 'one_time' ||
-        price.unit_amount !== 500 || price.currency !== 'usd') {
+        price.unit_amount !== 250 || price.currency !== 'usd') {
       return res.status(503).json({ready:false});
     }
     res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=60');
