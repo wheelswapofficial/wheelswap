@@ -31,7 +31,7 @@ function updateListingCategory(){
  const baseReset=resetFilters;resetFilters=function(){clearExtra();baseReset();};
  const baseGarage=openGarage;openGarage=function(){clearExtra();return baseGarage();};
  const baseSaved=showSaved;showSaved=function(){clearExtra();return baseSaved();};
- const cleanCondition=value=>({'good':'Used — Good','fair':'Used — Fair','like_new':'Like New'})[value]||value||'Not specified';
+ const cleanCondition=value=>({'new':'Brand New','good':'Used — Good','fair':'Used — Fair','like_new':'Like New'})[value]||value||'Not specified';
  const baseView=viewListing;
  viewListing=function(id){
   baseView(id);const l=listings.find(x=>String(x.id)===String(id));if(!l)return;
