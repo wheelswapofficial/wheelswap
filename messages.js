@@ -21,8 +21,9 @@ function showEarlierMessages(){messageLimit+=100;refreshMessages();}
 $('messageForm').addEventListener('submit',async e=>{e.preventDefault();if(!messagingSession()||!activeConversation)return;const body=$('messageText').value.trim();if(!body)return;const b=$('sendMessage');b.disabled=true;try{checked(await cloud.from('messages').insert({conversation_id:activeConversation,sender_id:currentUser.id,body}));$('messageText').value='';$('messageStatus').textContent='Message sent.';await refreshMessages();}catch(e){$('messageStatus').textContent=e.message}finally{b.disabled=false}});
 // Unread indicators are based on incoming messages since the last time this device opened each thread.
 const seenKey=id=>'wheelswap_seen_'+id;
+document.body.insertAdjacentHTML('beforeend','<button id="messageAlertBanner" type="button" onclick="openMessages()" style="display:none;position:fixed;top:85px;right:18px;z-index:9;max-width:calc(100vw - 36px);background:#ff681e;color:#101216;border:2px solid #fff3;border-radius:12px;padding:14px 18px;font-weight:900;box-shadow:0 8px 28px #0009" aria-live="polite">💬 You have unread messages — View inbox</button>');
 async function checkInboxNotifications(){
- if(!currentUser||!cloud)return;
+ if(!currentUser||!cloud){unreadMessageIds.clear();updateInboxBadge();return;}
  const uid=currentUser.id;
  try{
   const cs=checked(await cloud.from('conversations').select('id').limit(100));
@@ -41,7 +42,7 @@ async function checkInboxNotifications(){
   }
   const newly=[...unread].filter(id=>!unreadMessageIds.has(id));
   unreadMessageIds=unread;updateInboxBadge();
-  if(lastInboxCheck&&newly.length&&document.visibilityState==='visible'){
+  if(newly.length&&document.visibilityState==='visible'){
    toast('You have a new WheelSwap message!');
    if('Notification' in window&&Notification.permission==='granted')new Notification('WheelSwap: New message',{body:'A buyer or seller has replied. Open Messages to respond.'});
   }
@@ -53,6 +54,7 @@ function updateInboxBadge(){
  const nav=[...document.querySelectorAll('button')].find(b=>b.getAttribute('onclick')==='openMessages()');
  if(nav)nav.textContent='Messages'+(count?' ('+count+')':'');
  $('inboxUnread').textContent=count?'• '+count+' unread':'';
+ const banner=$('messageAlertBanner');if(banner){banner.style.display=count&&currentUser?'block':'none';banner.textContent='💬 You have '+count+' unread '+(count===1?'conversation':'conversations')+' — View messages';}
  document.title=(count?'('+count+') ':'')+'WheelSwap USA | Buy, Sell & Trade Wheels and Tires';
 }
 const previousSelectConversation=selectConversation;
@@ -68,4 +70,4 @@ setInterval(()=>{if(currentUser&&!document.hidden)checkInboxNotifications()},150
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(checkInboxNotifications,1500));
 else setTimeout(checkInboxNotifications,1500);
 const contactViewListing=viewListing;viewListing=function(id){contactViewListing(id);const l=listings.find(x=>x.id===id);if(l?.seller_id&&l.seller_id!==currentUser?.id)$('detailBody').insertAdjacentHTML('beforeend',`<button class="btn" style="width:100%;margin-top:12px" onclick="messageSeller('${l.id}')">Message seller</button>`);};
-if(cloud)cloud.auth.onAuthStateChange((_event,session)=>{if(!session||session.user.id!==messageUserId)closeMessages();});
+if(cloud)cloud.auth.onAuthStateChange((event,session)=>{if(!session){closeMessages();unreadMessageIds.clear();updateInboxBadge();lastInboxCheck=0;}else if(event==='SIGNED_IN'||event==='INITIAL_SESSION'){setTimeout(checkInboxNotifications,500);}});
