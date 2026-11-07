@@ -26,7 +26,7 @@ test('server: identity, prices, redirects, idempotency, settlement and signed ra
   r=res();await create({method:'POST',headers:{authorization:'Bearer valid'},body:{listing_id:'bad'}},r);assert.equal(r.code,400);
   r=res();await create({method:'POST',headers:{authorization:'Bearer valid'},body:{listing_id:listing,seller_id:'attacker',price:1,success_url:'https://evil.test'}},r);
   assert.equal(r.code,200);assert.equal(r.body.url,returned.url);assert.equal(calls[0].body.p_seller_id,uid);
-  assert.equal(params.line_items[0].price,'price_verified');assert.equal(params.line_items[0].quantity,1);assert.equal(params.mode,'payment');assert.equal(params.payment_method_collection,undefined);
+  assert.equal(params.line_items[0].price_data.unit_amount,100);assert.equal(params.line_items[0].price_data.currency,'usd');assert.equal(params.line_items[0].quantity,1);assert.equal(params.mode,'payment');assert.equal(params.payment_method_collection,undefined);
   assert.equal(params.success_url,'https://www.wheelswapusa.com/?checkout=success&session_id={CHECKOUT_SESSION_ID}');assert.equal(params.cancel_url,'https://www.wheelswapusa.com/?checkout=cancel');
   assert.equal(params.metadata.seller_id,uid);assert.equal(key,'wheelswap-listing-'+order);
   prep={published:true};r=res();await create({method:'POST',headers:{authorization:'Bearer valid'},body:{listing_id:listing}},r);assert.equal(r.body.published,true);
@@ -75,4 +75,16 @@ test('browser: cancellation keeps draft, checkout requires consent, status uses 
  vm.createContext(ctx);vm.runInContext(fs.readFileSync('billing.js','utf8'),ctx);
  await assert.rejects(vm.runInContext(`publishListingAccess('${listing}')`,ctx),/draft is saved/);assert.equal(assigned,null);
  confirmValue=true;await assert.rejects(vm.runInContext(`publishListingAccess('${listing}')`,ctx),/Opening secure checkout/);assert.equal(assigned,'https://checkout.stripe.com/pay');assert.equal(requests[0].headers.Authorization,'Bearer existing');
+});
+
+test('new $1 payments and earlier $2.50 payments both fulfill; mismatched amounts fail',async()=>{
+ const savedFetch=global.fetch;global.fetch=async()=>new Response(JSON.stringify({fulfilled:true}));
+ const c={live:false,STRIPE_LISTING_PRICE_ID:'price_verified',SUPABASE_URL:'https://test.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'private'};
+ const fresh={...session,amount_total:100,line_items:{data:[{price:{id:'price_inline',unit_amount:100,currency:'usd',type:'one_time'},quantity:1}]}};
+ const client=value=>({checkout:{sessions:{retrieve:async()=>value}}});
+ try {
+  assert.equal((await b.fulfill(c,client(fresh),fresh.id,uid)).fulfilled,true);
+  assert.equal((await b.fulfill(c,client(session),session.id,uid)).fulfilled,true);
+  await assert.rejects(b.fulfill(c,client({...fresh,amount_total:99}),fresh.id,uid),/do not match/);
+ }finally{global.fetch=savedFetch;}
 });
