@@ -9,7 +9,7 @@ module.exports=async function handler(req,res) {
     let order=await b.rpc(c,'billing_prepare_listing',{p_seller_id:user.id,p_listing_id:req.body.listing_id});
     if(order.published) return res.json(order);
     const client=b.stripe(c),price=await client.prices.retrieve(c.STRIPE_LISTING_PRICE_ID);
-    if(!price.active || price.livemode!==c.live || price.type!=='one_time' || price.unit_amount!==250 || price.currency!=='usd') throw b.httpError(503,'The listing price needs configuration. Your listing is saved.');
+    if(!price.active || price.livemode!==c.live || price.type!=='one_time' || ![100,250,500].includes(price.unit_amount) || price.currency!=='usd') throw b.httpError(503,'The listing price needs configuration. Your listing is saved.');
     if(order.session_id) {
       const existing=await client.checkout.sessions.retrieve(order.session_id);
       if(existing.payment_status==='paid') {
@@ -18,7 +18,7 @@ module.exports=async function handler(req,res) {
       }
       if(existing.status==='complete') return res.json({processing:true});
       if(existing.status==='open' && existing.url) {
-        if(existing.amount_total===250) return res.json({url:existing.url});
+        if(existing.amount_total===100) return res.json({url:existing.url});
         await client.checkout.sessions.expire(existing.id);
         existing.status='expired';
       }
@@ -32,7 +32,7 @@ module.exports=async function handler(req,res) {
       phone_number_collection:{enabled:false},automatic_tax:{enabled:false},allow_promotion_codes:false,
       submit_type:'auto',integration_identifier:'hosted_web_0001',origin_context:'web',
       success_url:c.APP_URL+'/?checkout=success&session_id={CHECKOUT_SESSION_ID}',
-      cancel_url:c.APP_URL+'/?checkout=cancel',line_items:[{price:c.STRIPE_LISTING_PRICE_ID,quantity:1}],
+      cancel_url:c.APP_URL+'/?checkout=cancel',line_items:[{price_data:{currency:'usd',unit_amount:100,product_data:{name:'WheelSwap Single Listing'}},quantity:1}],
       metadata:{order_id:order.order_id,seller_id:user.id,listing_id:req.body.listing_id},
       expires_at:Math.floor(new Date(order.expires_at).getTime()/1000),
     },{idempotencyKey:'wheelswap-listing-'+order.order_id});
