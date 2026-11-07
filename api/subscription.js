@@ -16,7 +16,7 @@ module.exports=async function(req,res) {
   if(existing&&!['canceled','incomplete_expired'].includes(existing.status))return res.json({subscription:existing,already_subscribed:true});
   const plan=req.body?.plan||'monthly',spec=Object.hasOwn(s.PLANS,plan)?s.PLANS[plan]:null;
   if(!spec)throw b.httpError(400,'Choose a valid membership plan.');
-  const p=await s.price(c,client,plan);
+  const priceData={currency:'usd',unit_amount:spec.amount,product:s.PRODUCT,recurring:{interval:spec.interval}};
   if(!a.customer_id) {
    const customer=await client.customers.create({email:user.email,metadata:{seller_id:user.id}},{idempotencyKey:'wheelswap-customer-'+user.id});
    a=await b.rpc(c,'billing_subscription_account',{p_seller_id:user.id,p_customer_id:customer.id});
@@ -33,12 +33,11 @@ module.exports=async function(req,res) {
    a=await b.rpc(c,'billing_subscription_account',{p_seller_id:user.id,p_session_id:a.session_id,p_expire:true});
   }
   const session=await client.checkout.sessions.create({
-   mode:'subscription',allow_promotion_codes:true,customer:a.customer_id,line_items:[{price:p.id,quantity:1}],
-   subscription_data:{metadata:{seller_id:user.id,plan:spec.lookup}},metadata:{seller_id:user.id,plan:spec.lookup,...(plan==='annual'?{surprise_box:'one_at_signup'}:{})},
-   ...(plan==='annual'?{shipping_address_collection:{allowed_countries:['US']},customer_update:{shipping:'auto'}}:{}),
+   mode:'subscription',allow_promotion_codes:true,customer:a.customer_id,line_items:[{price_data:priceData,quantity:1}],
+   subscription_data:{metadata:{seller_id:user.id,plan:spec.lookup}},metadata:{seller_id:user.id,plan:spec.lookup},
    success_url:c.APP_URL+'/?membership=success',cancel_url:c.APP_URL+'/?membership=cancel',
    integration_identifier:'wheelswap_'+plan+'_qmxrptza',
-   custom_text:{submit:{message:plan==='annual'?'$260 USD per year for unlimited new listings, plus one surprise box with a shirt and little goodies after your initial payment. US shipping included. Renews annually until canceled in My Garage. Goodies vary.':'$25 USD per month for unlimited new listings. Renews monthly until canceled. Cancel in My Garage. Existing listings remain posted after cancellation.'}},
+   custom_text:{submit:{message:plan==='annual'?'$100 USD per year for unlimited new listings. Renews annually until canceled in My Garage.':'$10 USD per month for unlimited new listings. Renews monthly until canceled. Cancel in My Garage. Existing listings remain posted after cancellation.'}},
   },{idempotencyKey:'wheelswap-subscription-'+a.checkout_token});
   await b.rpc(c,'billing_subscription_account',{p_seller_id:user.id,p_session_id:session.id});
   return res.json({url:session.url});
